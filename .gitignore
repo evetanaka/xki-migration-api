@@ -1,0 +1,16 @@
+/vendor/
+/.env.local
+/.env.*.local
+/var/
+/config/secrets/dev/dev.decrypt.private.php
+/public/bundles/
+###> symfony/framework-bundle ###
+/.env.local
+/.env.local.php
+/.env.*.local
+/config/secrets/dev/dev.decrypt.private.php
+/public/bundles/
+/var/
+###< symfony/framework-bundle ###
+.idea/
+.DS_Store

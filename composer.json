@@ -1,0 +1,9 @@
+{
+    "require": {
+        "symfony/orm-pack": "^2.7",
+        "symfony/maker-bundle": "^1.65",
+        "symfony/security-bundle": "^8.0",
+        "symfony/validator": "^8.0",
+        "nelmio/cors-bundle": "^2.6"
+    }
+}
