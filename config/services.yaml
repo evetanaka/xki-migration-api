@@ -1,0 +1,15 @@
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    App\:
+        resource: '../src/'
+        exclude:
+            - '../src/Entity/'
+            - '../src/Repository/'
+
+    # Repositories are automatically registered as services
+    App\Repository\:
+        resource: '../src/Repository/'
+        tags: ['doctrine.repository_service']

@@ -1,0 +1,15 @@
+# API Controllers with PHP 8 Attributes
+# Routes are defined using #[Route] attributes in controllers
+# No manual configuration needed for attribute-based routing
+
+controllers:
+    resource:
+        path: ../src/Controller/
+        namespace: App\Controller
+    type: attribute
+
+# Enable API route prefix if needed
+# api:
+#     resource: ../src/Controller/Api/
+#     type: attribute
+#     prefix: /api
