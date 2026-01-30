@@ -4,3 +4,8 @@ framework:
     handle_all_throwables: true
     php_errors:
         log: true
+    
+    # Enable attribute routing
+    router:
+        utf8: true
+        default_uri: null
