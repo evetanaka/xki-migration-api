@@ -16,7 +16,7 @@ class ClaimRepository extends ServiceEntityRepository
         parent::__construct($registry, Claim::class);
     }
 
-    public function save(Claim $entity, bool $flush = false): void
+    public function save(Claim $entity, bool $flush = true): void
     {
         $this->getEntityManager()->persist($entity);
 
@@ -25,7 +25,7 @@ class ClaimRepository extends ServiceEntityRepository
         }
     }
 
-    public function remove(Claim $entity, bool $flush = false): void
+    public function remove(Claim $entity, bool $flush = true): void
     {
         $this->getEntityManager()->remove($entity);
 
@@ -68,25 +68,40 @@ class ClaimRepository extends ServiceEntityRepository
     }
 
     /**
-     * Get total claimed amount by status
-     */
-    public function getTotalAmountByStatus(string $status): string
-    {
-        $qb = $this->createQueryBuilder('c')
-            ->select('SUM(c.amount) as total')
-            ->where('c.status = :status')
-            ->setParameter('status', $status)
-            ->getQuery()
-            ->getSingleScalarResult();
-
-        return (string) ($qb ?? '0');
-    }
-}
-
-    /**
      * Count completed claims
      */
     public function countCompleted(): int
     {
         return $this->count(['status' => 'completed']);
     }
+
+    /**
+     * Get total distributed amount (completed claims)
+     */
+    public function sumDistributed(): int
+    {
+        $result = $this->createQueryBuilder('c')
+            ->select('SUM(c.amount) as total')
+            ->where('c.status = :status')
+            ->setParameter('status', 'completed')
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        return (int) ($result ?? 0);
+    }
+
+    /**
+     * Get total amount by status
+     */
+    public function getTotalAmountByStatus(string $status): int
+    {
+        $result = $this->createQueryBuilder('c')
+            ->select('SUM(c.amount) as total')
+            ->where('c.status = :status')
+            ->setParameter('status', $status)
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        return (int) ($result ?? 0);
+    }
+}

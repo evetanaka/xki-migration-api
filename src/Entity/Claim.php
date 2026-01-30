@@ -19,6 +19,9 @@ class Claim
     #[ORM\Column(type: 'string', length: 255)]
     private string $ethAddress;
 
+    #[ORM\Column(type: 'bigint')]
+    private int $amount = 0;
+
     #[ORM\Column(type: 'string', length: 50)]
     private string $status = 'pending'; // pending, approved, rejected, completed
 
@@ -72,6 +75,17 @@ class Claim
     public function setEthAddress(string $ethAddress): self
     {
         $this->ethAddress = $ethAddress;
+        return $this;
+    }
+
+    public function getAmount(): int
+    {
+        return $this->amount;
+    }
+
+    public function setAmount(int $amount): self
+    {
+        $this->amount = $amount;
         return $this;
     }
 
