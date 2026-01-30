@@ -6,7 +6,7 @@ use App\Repository\ClaimRepository;
 use App\Repository\EligibilityRepository;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Routing\Attribute\Route;
 
 #[Route('/api/stats')]
 class StatsController extends AbstractController
