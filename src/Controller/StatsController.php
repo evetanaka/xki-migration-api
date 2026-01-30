@@ -21,10 +21,13 @@ class StatsController extends AbstractController
     public function index(): JsonResponse
     {
         $totalEligible = $this->eligibilityRepository->countEligible();
-        $totalClaimed = $this->claimRepository->countCompleted();
+        
+        // Sum of XKI distributed (stored in uxki, convert to XKI)
+        $totalClaimedUxki = $this->claimRepository->sumDistributed();
+        $totalClaimed = (int) floor($totalClaimedUxki / 1_000_000);
 
         $claimRate = $totalEligible > 0 
-            ? round(($totalClaimed / $totalEligible) * 100, 2) 
+            ? round(($this->claimRepository->countCompleted() / $totalEligible) * 100, 2) 
             : 0.0;
 
         // Deadline set to 6 months from now (can be configured)
