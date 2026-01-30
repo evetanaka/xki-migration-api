@@ -22,8 +22,8 @@ class StatsController extends AbstractController
     {
         $totalEligible = $this->eligibilityRepository->countEligible();
         
-        // Sum of XKI distributed (stored in uxki, convert to XKI)
-        $totalClaimedUxki = $this->claimRepository->sumDistributed();
+        // Sum of XKI claimed (all claims, stored in uxki, convert to XKI)
+        $totalClaimedUxki = $this->claimRepository->sumAllClaimed();
         $totalClaimed = (int) floor($totalClaimedUxki / 1_000_000);
 
         $claimRate = $totalEligible > 0 

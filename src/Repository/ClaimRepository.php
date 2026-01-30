@@ -91,6 +91,19 @@ class ClaimRepository extends ServiceEntityRepository
     }
 
     /**
+     * Get total claimed amount (all claims, regardless of status)
+     */
+    public function sumAllClaimed(): int
+    {
+        $result = $this->createQueryBuilder('c')
+            ->select('SUM(c.amount) as total')
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        return (int) ($result ?? 0);
+    }
+
+    /**
      * Get total amount by status
      */
     public function getTotalAmountByStatus(string $status): int
