@@ -8,6 +8,7 @@ use BitWasp\Bech32\Bech32;
 /**
  * Service de vérification de signatures Cosmos (secp256k1)
  * Compatible avec les adresses Ki Chain (ki1...)
+ * Supporte le format ADR-036 utilisé par Keplr signArbitrary
  */
 class CosmosSignatureService
 {
@@ -19,9 +20,10 @@ class CosmosSignatureService
     }
 
     /**
-     * Vérifie qu'une signature Cosmos est valide et correspond à l'adresse attendue
+     * Vérifie qu'une signature Cosmos ADR-036 est valide et correspond à l'adresse attendue
+     * Format utilisé par Keplr signArbitrary()
      *
-     * @param string $message Le message qui a été signé
+     * @param string $message Le message original qui a été signé
      * @param string $signature La signature en base64
      * @param string $pubKey La clé publique en base64
      * @param string $expectedAddress L'adresse attendue (format ki1...)
@@ -51,31 +53,67 @@ class CosmosSignatureService
                 return false;
             }
 
+            // Dérive l'adresse depuis la pubKey et compare d'abord
+            $derivedAddress = $this->deriveAddress($pubKeyBytes);
+            if ($derivedAddress !== $expectedAddress) {
+                return false;
+            }
+
             // Extrait r et s de la signature (32 bytes chacun)
             $r = bin2hex(substr($signatureBytes, 0, 32));
             $s = bin2hex(substr($signatureBytes, 32, 32));
 
-            // Hash du message (SHA256)
-            $msgHash = hash('sha256', $message, false);
+            // Construit le document de signature ADR-036 (format Keplr signArbitrary)
+            $signDoc = $this->buildAdr036SignDoc($expectedAddress, $message);
+            
+            // Hash SHA256 du document de signature sérialisé
+            $msgHash = hash('sha256', $signDoc, false);
 
             // Import de la clé publique
             $pubKeyHex = bin2hex($pubKeyBytes);
             $key = $this->ec->keyFromPublic($pubKeyHex, 'hex');
 
             // Vérifie la signature
-            $isValid = $key->verify($msgHash, ['r' => $r, 's' => $s]);
-
-            if (!$isValid) {
-                return false;
-            }
-
-            // Dérive l'adresse depuis la pubKey et compare
-            $derivedAddress = $this->deriveAddress($pubKeyBytes);
-            
-            return $derivedAddress === $expectedAddress;
+            return $key->verify($msgHash, ['r' => $r, 's' => $s]);
         } catch (\Exception $e) {
             return false;
         }
+    }
+
+    /**
+     * Construit le document de signature ADR-036 au format JSON canonique
+     * C'est ce format que Keplr signe réellement avec signArbitrary()
+     *
+     * @param string $signer L'adresse du signataire
+     * @param string $data Le message à signer
+     * @return string Le JSON sérialisé de manière canonique (clés triées, pas d'espaces)
+     */
+    private function buildAdr036SignDoc(string $signer, string $data): string
+    {
+        // Le document doit être sérialisé avec les clés dans l'ordre alphabétique
+        // et sans espaces (format canonique)
+        $doc = [
+            'account_number' => '0',
+            'chain_id' => '',
+            'fee' => [
+                'amount' => [],
+                'gas' => '0'
+            ],
+            'memo' => '',
+            'msgs' => [
+                [
+                    'type' => 'sign/MsgSignData',
+                    'value' => [
+                        'data' => base64_encode($data),
+                        'signer' => $signer
+                    ]
+                ]
+            ],
+            'sequence' => '0'
+        ];
+
+        // JSON_UNESCAPED_SLASHES est important pour la compatibilité
+        return json_encode($doc, JSON_UNESCAPED_SLASHES);
     }
 
     /**
@@ -102,12 +140,6 @@ class CosmosSignatureService
     /**
      * Convertit un tableau de bits d'une base à une autre
      * Nécessaire pour l'encodage bech32
-     *
-     * @param array $data Données en entrée
-     * @param int $fromBits Nombre de bits en entrée
-     * @param int $toBits Nombre de bits en sortie
-     * @param bool $pad Ajouter du padding si nécessaire
-     * @return array Données converties
      */
     private function convertBits(array $data, int $fromBits, int $toBits, bool $pad = true): array
     {
@@ -134,29 +166,5 @@ class CosmosSignatureService
         }
 
         return $result;
-    }
-
-    /**
-     * Génère le message de claim pour la migration
-     *
-     * @param string $kiAddress L'adresse Ki Chain de l'utilisateur
-     * @param string $ethAddress L'adresse Ethereum de destination
-     * @param string $nonce Le nonce unique pour cette migration
-     * @return string Le message à signer
-     */
-    public function generateClaimMessage(
-        string $kiAddress,
-        string $ethAddress,
-        string $nonce
-    ): string {
-        $timestamp = time();
-        
-        return sprintf(
-            "I authorize the migration of my XKI tokens from %s to %s. Nonce: %s. Timestamp: %d",
-            $kiAddress,
-            $ethAddress,
-            $nonce,
-            $timestamp
-        );
     }
 }
