@@ -16,6 +16,9 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction
 # Create var/ directories
 RUN mkdir -p var/cache var/log
 
+# DEBUG: Show routes during build
+RUN APP_ENV=prod APP_DEBUG=0 php bin/console debug:router --no-ansi 2>&1 || echo "debug:router failed"
+
 # Clear and warmup cache
 RUN php bin/console cache:clear --env=prod --no-warmup \
     && php bin/console cache:warmup --env=prod
@@ -30,7 +33,7 @@ RUN sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/html/public|g' /e
     && echo '<Directory /var/www/html/public>\nAllowOverride All\nRequire all granted\n</Directory>' >> /etc/apache2/apache2.conf
 
 # Create entrypoint script
-RUN echo '#!/bin/bash\nset -e\necho "Running migrations..."\nphp bin/console doctrine:migrations:migrate --no-interaction 2>&1 || echo "Migrations skipped"\necho "Starting Apache..."\nexec apache2-foreground' > /entrypoint.sh \
+RUN echo '#!/bin/bash\nset -e\nphp bin/console doctrine:migrations:migrate --no-interaction 2>&1 || true\nexec apache2-foreground' > /entrypoint.sh \
     && chmod +x /entrypoint.sh
 
 EXPOSE 80
