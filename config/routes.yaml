@@ -1,11 +1,4 @@
-# API Controllers
-api:
-    resource:
-        path: ../src/Controller/Api/
-        namespace: App\Controller\Api
-    type: attribute
-
-# Other controllers (if any)
+# Scan all controllers recursively
 controllers:
     resource:
         path: ../src/Controller/
