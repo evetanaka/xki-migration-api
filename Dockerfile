@@ -23,9 +23,5 @@ RUN sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/html/public|g' /e
     && echo '<Directory /var/www/html/public>\nAllowOverride All\nRequire all granted\n</Directory>' >> /etc/apache2/apache2.conf \
     && chown -R www-data:www-data /var/www/html
 
-# Create startup script
-RUN echo '#!/bin/bash\nset -e\necho "Running migrations..."\nphp bin/console doctrine:migrations:migrate --no-interaction || echo "Migration failed, continuing..."\necho "Starting Apache..."\napache2-foreground' > /start.sh \
-    && chmod +x /start.sh
-
 EXPOSE 80
-CMD ["/start.sh"]
+# Use default apache2-foreground from base image
