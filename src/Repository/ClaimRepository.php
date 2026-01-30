@@ -91,12 +91,14 @@ class ClaimRepository extends ServiceEntityRepository
     }
 
     /**
-     * Get total claimed amount (all claims, regardless of status)
+     * Get total claimed amount (all claims except rejected)
      */
     public function sumAllClaimed(): int
     {
         $result = $this->createQueryBuilder('c')
             ->select('SUM(c.amount) as total')
+            ->where('c.status != :rejected')
+            ->setParameter('rejected', 'rejected')
             ->getQuery()
             ->getSingleScalarResult();
 
