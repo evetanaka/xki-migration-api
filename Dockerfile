@@ -1,4 +1,4 @@
-FROM php:8.3-apache
+FROM php:8.4-apache
 
 RUN apt-get update && apt-get install -y \
     git unzip libpq-dev libicu-dev libzip-dev libgmp-dev \
@@ -24,4 +24,3 @@ RUN sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/html/public|g' /e
     && chown -R www-data:www-data /var/www/html
 
 EXPOSE 80
-# Use default apache2-foreground from base image
