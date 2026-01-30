@@ -18,7 +18,7 @@ RUN chown -R www-data:www-data var && chmod -R 775 var && chown -R www-data:www-
 RUN sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/html/public|g' /etc/apache2/sites-available/000-default.conf \
     && echo '<Directory /var/www/html/public>\nAllowOverride All\nRequire all granted\n</Directory>' >> /etc/apache2/apache2.conf
 
-RUN echo '#!/bin/bash\nset -e\necho "=== DEBUG ROUTES ==="\nphp bin/console debug:router 2>&1 || echo "router debug failed"\necho "==================="\nphp bin/console doctrine:migrations:migrate --no-interaction 2>&1 || true\nexec apache2-foreground' > /entrypoint.sh && chmod +x /entrypoint.sh
+RUN echo '#!/bin/bash\nset -e\necho "DEBUG ROUTES:" >&2\nphp bin/console debug:router 2>&1 >&2 || echo "ROUTER FAILED" >&2\nphp bin/console doctrine:migrations:migrate --no-interaction 2>&1 || true\nexec apache2-foreground' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 EXPOSE 80
 CMD ["/entrypoint.sh"]
