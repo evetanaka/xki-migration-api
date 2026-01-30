@@ -184,23 +184,29 @@ class AdminController extends AbstractController
             return $this->json(['error' => 'Unauthorized'], 401);
         }
 
-        $pending = $this->claimRepository->countByStatus('pending');
-        $approved = $this->claimRepository->countByStatus('approved');
-        $completed = $this->claimRepository->countByStatus('completed');
-        $rejected = $this->claimRepository->countByStatus('rejected');
+        try {
+            $pending = $this->claimRepository->countByStatus('pending');
+            $approved = $this->claimRepository->countByStatus('approved');
+            $completed = $this->claimRepository->countByStatus('completed');
+            $rejected = $this->claimRepository->countByStatus('rejected');
 
-        $total = $pending + $approved + $completed + $rejected;
-        $distributed = $this->claimRepository->sumDistributed();
+            $total = $pending + $approved + $completed + $rejected;
+            $distributed = $this->claimRepository->sumDistributed();
 
-        return $this->json([
-            'pending' => $pending,
-            'approved' => $approved,
-            'completed' => $completed,
-            'rejected' => $rejected,
-            'total' => $total,
-            'distributed' => $distributed,
-            'rate' => $total > 0 ? round(($completed / $total) * 100, 1) : 0
-        ]);
+            return $this->json([
+                'pending' => $pending,
+                'approved' => $approved,
+                'completed' => $completed,
+                'rejected' => $rejected,
+                'total' => $total,
+                'distributed' => $distributed,
+                'rate' => $total > 0 ? round(($completed / $total) * 100, 1) : 0
+            ]);
+        } catch (\Exception $e) {
+            return $this->json([
+                'error' => 'Database error: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -213,29 +219,35 @@ class AdminController extends AbstractController
             return $this->json(['error' => 'Unauthorized'], 401);
         }
 
-        $status = $request->query->get('status', null);
+        try {
+            $status = $request->query->get('status', null);
 
-        if ($status && $status !== 'all') {
-            $claims = $this->claimRepository->findByStatus($status);
-        } else {
-            $claims = $this->claimRepository->findBy([], ['createdAt' => 'DESC']);
+            if ($status && $status !== 'all') {
+                $claims = $this->claimRepository->findByStatus($status);
+            } else {
+                $claims = $this->claimRepository->findBy([], ['createdAt' => 'DESC']);
+            }
+
+            $data = array_map(function ($claim) {
+                return [
+                    'id' => $claim->getId(),
+                    'kiAddress' => $claim->getKiAddress(),
+                    'ethAddress' => $claim->getEthAddress(),
+                    'amount' => $claim->getAmount(),
+                    'status' => $claim->getStatus(),
+                    'txHash' => $claim->getTxHash(),
+                    'createdAt' => $claim->getCreatedAt()->format('Y-m-d H:i:s'),
+                    'claimedAt' => $claim->getClaimedAt()?->format('Y-m-d H:i:s'),
+                    'adminNotes' => $claim->getAdminNotes()
+                ];
+            }, $claims);
+
+            return $this->json($data);
+        } catch (\Exception $e) {
+            return $this->json([
+                'error' => 'Database error: ' . $e->getMessage()
+            ], 500);
         }
-
-        $data = array_map(function ($claim) {
-            return [
-                'id' => $claim->getId(),
-                'kiAddress' => $claim->getKiAddress(),
-                'ethAddress' => $claim->getEthAddress(),
-                'amount' => $claim->getAmount(),
-                'status' => $claim->getStatus(),
-                'txHash' => $claim->getTxHash(),
-                'createdAt' => $claim->getCreatedAt()->format('Y-m-d H:i:s'),
-                'claimedAt' => $claim->getClaimedAt()?->format('Y-m-d H:i:s'),
-                'adminNotes' => $claim->getAdminNotes()
-            ];
-        }, $claims);
-
-        return $this->json($data);
     }
 
     /**
