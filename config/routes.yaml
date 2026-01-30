@@ -1,6 +1,14 @@
-# Scan all controllers recursively
+# API Controllers (in Api/ subdirectory)
+api_controllers:
+    resource:
+        path: ../src/Controller/Api/
+        namespace: App\Controller\Api
+    type: attribute
+
+# Root controllers (if any)
 controllers:
     resource:
         path: ../src/Controller/
         namespace: App\Controller
     type: attribute
+    exclude: ../src/Controller/Api/
