@@ -82,3 +82,11 @@ class ClaimRepository extends ServiceEntityRepository
         return (string) ($qb ?? '0');
     }
 }
+
+    /**
+     * Count completed claims
+     */
+    public function countCompleted(): int
+    {
+        return $this->count(['status' => 'completed']);
+    }
