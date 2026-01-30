@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Controller\Api;
+namespace App\Controller;
 
 use App\Repository\ClaimRepository;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
