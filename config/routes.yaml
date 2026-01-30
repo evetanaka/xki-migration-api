@@ -1,3 +1,6 @@
-# Import route files from routes/ directory
-imports:
-    - { resource: routes/ }
+# Controllers with PHP 8 attributes
+controllers:
+    resource:
+        path: ../src/Controller/
+        namespace: App\Controller
+    type: attribute
