@@ -23,4 +23,9 @@ RUN sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/html/public|g' /e
     && echo '<Directory /var/www/html/public>\nAllowOverride All\nRequire all granted\n</Directory>' >> /etc/apache2/apache2.conf \
     && chown -R www-data:www-data /var/www/html
 
+# Create entrypoint script
+RUN echo '#!/bin/bash\nset -e\necho "Running migrations..."\nphp bin/console doctrine:migrations:migrate --no-interaction 2>&1 || echo "Migrations skipped or failed"\necho "Starting Apache..."\nexec apache2-foreground' > /entrypoint.sh \
+    && chmod +x /entrypoint.sh
+
 EXPOSE 80
+CMD ["/entrypoint.sh"]
