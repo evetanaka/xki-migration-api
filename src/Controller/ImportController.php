@@ -123,17 +123,23 @@ class ImportController extends AbstractController
             return $this->json(['error' => 'Unauthorized'], 401);
         }
 
-        // Reset all eligibility records
-        $this->entityManager->createQuery(
-            'UPDATE App\Entity\Eligibility e SET e.claimed = false, e.ethAddress = NULL, e.claimId = NULL, e.signature = NULL'
+        // Reset all eligibility records to not claimed
+        $resetCount = $this->entityManager->createQuery(
+            'UPDATE App\Entity\Eligibility e SET e.claimed = false'
         )->execute();
 
         // Delete all claims
-        $this->entityManager->createQuery('DELETE FROM App\Entity\Claim')->execute();
+        $claimCount = $this->entityManager->createQuery('DELETE FROM App\Entity\Claim')->execute();
+
+        // Delete all nonces
+        $nonceCount = $this->entityManager->createQuery('DELETE FROM App\Entity\Nonce')->execute();
 
         return $this->json([
             'success' => true,
-            'message' => 'All claims reset successfully'
+            'message' => 'All claims reset successfully',
+            'eligibilityReset' => $resetCount,
+            'claimsDeleted' => $claimCount,
+            'noncesDeleted' => $nonceCount
         ]);
     }
 
