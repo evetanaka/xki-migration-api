@@ -62,8 +62,16 @@ class ImportController extends AbstractController
             if (count($row) < 3) continue;
 
             $address = $row[0];
-            $balanceUxki = $row[1];
-            $balanceXki = (float) $row[2];
+            // Support both old format (3 cols) and new format (7 cols with total)
+            if (count($row) >= 7) {
+                // New format: address,liquid_uxki,staked_uxki,unbonding_uxki,rewards_uxki,total_uxki,total_xki
+                $balanceUxki = $row[5]; // total_uxki
+                $balanceXki = (float) $row[6]; // total_xki
+            } else {
+                // Old format: address,balance_uxki,balance_xki
+                $balanceUxki = $row[1];
+                $balanceXki = (float) $row[2];
+            }
 
             // Skip if balance is below minimum
             if ($balanceXki < $minBalance) {
