@@ -113,6 +113,31 @@ class ImportController extends AbstractController
     }
 
     /**
+     * Reset database - clear all claims and reset eligibility
+     */
+    #[Route('/reset-claims', name: 'api_admin_reset_claims', methods: ['POST'])]
+    public function resetClaims(Request $request): JsonResponse
+    {
+        $authHeader = $request->headers->get('Authorization');
+        if (!$authHeader || !$this->verifyToken($authHeader)) {
+            return $this->json(['error' => 'Unauthorized'], 401);
+        }
+
+        // Reset all eligibility records
+        $this->entityManager->createQuery(
+            'UPDATE App\Entity\Eligibility e SET e.claimed = false, e.ethAddress = NULL, e.claimId = NULL, e.signature = NULL'
+        )->execute();
+
+        // Delete all claims
+        $this->entityManager->createQuery('DELETE FROM App\Entity\Claim')->execute();
+
+        return $this->json([
+            'success' => true,
+            'message' => 'All claims reset successfully'
+        ]);
+    }
+
+    /**
      * Get import stats
      */
     #[Route('/import-stats', name: 'api_admin_import_stats', methods: ['GET'])]
