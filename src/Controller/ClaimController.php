@@ -97,10 +97,11 @@ class ClaimController extends AbstractController
         // TODO: Verify signature with pubKey and nonce
         // This would require implementing the cryptographic verification
 
-        // Create claim
+        // Create claim with amount from eligibility
         $claim = new Claim();
         $claim->setKiAddress($kiAddress);
         $claim->setEthAddress($ethAddress);
+        $claim->setAmount((int) $eligibility->getBalance());
         $claim->setSignature($signature);
         $claim->setPubKey($pubKey);
         $claim->setNonce($nonce);
