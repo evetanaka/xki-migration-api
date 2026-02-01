@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\Repository\ClaimRepository;
+use App\Repository\EligibilityRepository;
 use App\Service\CosmosSignatureService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -22,6 +23,7 @@ class AdminController extends AbstractController
 
     public function __construct(
         private ClaimRepository $claimRepository,
+        private EligibilityRepository $eligibilityRepository,
         private CosmosSignatureService $cosmosSignatureService
     ) {
     }
@@ -323,6 +325,10 @@ class AdminController extends AbstractController
             $claim->setAdminNotes($data['adminNotes']);
         }
 
+        if (isset($data['amount'])) {
+            $claim->setAmount((int) $data['amount']);
+        }
+
         $this->claimRepository->save($claim);
 
         return $this->json([
@@ -336,6 +342,43 @@ class AdminController extends AbstractController
                 'adminNotes' => $claim->getAdminNotes(),
                 'claimedAt' => $claim->getClaimedAt()?->format('Y-m-d H:i:s')
             ]
+        ]);
+    }
+
+    /**
+     * Fix claims with amount=0 by cross-referencing with eligibility
+     */
+    #[Route('/fix-amounts', name: 'api_admin_fix_amounts', methods: ['POST'])]
+    public function fixAmounts(Request $request): JsonResponse
+    {
+        if (!$this->verifyToken($request)) {
+            return $this->json(['error' => 'Unauthorized'], 401);
+        }
+
+        $claims = $this->claimRepository->findBy(['amount' => 0]);
+        $fixed = [];
+
+        foreach ($claims as $claim) {
+            $eligibility = $this->eligibilityRepository->findOneBy(['kiAddress' => $claim->getKiAddress()]);
+            
+            if ($eligibility && (int) $eligibility->getBalance() > 0) {
+                $amount = (int) $eligibility->getBalance();
+                $claim->setAmount($amount);
+                $this->claimRepository->save($claim);
+                
+                $fixed[] = [
+                    'id' => $claim->getId(),
+                    'kiAddress' => $claim->getKiAddress(),
+                    'amount' => $amount,
+                    'amountXki' => $amount / 1000000
+                ];
+            }
+        }
+
+        return $this->json([
+            'success' => true,
+            'fixed' => count($fixed),
+            'claims' => $fixed
         ]);
     }
 }
