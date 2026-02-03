@@ -209,35 +209,42 @@ class GovernanceController extends AbstractController
     #[Route('/admin/proposals', methods: ['POST'])]
     public function adminCreateProposal(Request $request): JsonResponse
     {
-        $data = json_decode($request->getContent(), true);
+        try {
+            $data = json_decode($request->getContent(), true);
 
-        $title = $data['title'] ?? null;
-        $description = $data['description'] ?? null;
-        $startDate = $data['startDate'] ?? null;
-        $endDate = $data['endDate'] ?? null;
-        $status = $data['status'] ?? Proposal::STATUS_DRAFT;
-        $quorum = $data['quorum'] ?? '0';
+            $title = $data['title'] ?? null;
+            $description = $data['description'] ?? null;
+            $startDate = $data['startDate'] ?? null;
+            $endDate = $data['endDate'] ?? null;
+            $status = $data['status'] ?? Proposal::STATUS_DRAFT;
+            $quorum = $data['quorum'] ?? '0';
 
-        if (!$title || !$description || !$startDate || !$endDate) {
-            return $this->json(['error' => 'Missing required fields'], 400);
+            if (!$title || !$description || !$startDate || !$endDate) {
+                return $this->json(['error' => 'Missing required fields'], 400);
+            }
+
+            $proposal = new Proposal();
+            $proposal->setTitle($title)
+                ->setDescription($description)
+                ->setStartDate(new \DateTime($startDate))
+                ->setEndDate(new \DateTime($endDate))
+                ->setStatus($status)
+                ->setQuorum($quorum)
+                ->setProposalNumber($this->proposalRepo->getNextProposalNumber());
+
+            $this->em->persist($proposal);
+            $this->em->flush();
+
+            return $this->json([
+                'success' => true,
+                'proposal' => $proposal->toArray(),
+            ], 201);
+        } catch (\Exception $e) {
+            return $this->json([
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ], 500);
         }
-
-        $proposal = new Proposal();
-        $proposal->setTitle($title)
-            ->setDescription($description)
-            ->setStartDate(new \DateTime($startDate))
-            ->setEndDate(new \DateTime($endDate))
-            ->setStatus($status)
-            ->setQuorum($quorum)
-            ->setProposalNumber($this->proposalRepo->getNextProposalNumber());
-
-        $this->em->persist($proposal);
-        $this->em->flush();
-
-        return $this->json([
-            'success' => true,
-            'proposal' => $proposal->toArray(),
-        ], 201);
     }
 
     /**
