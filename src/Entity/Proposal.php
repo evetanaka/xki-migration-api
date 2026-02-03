@@ -31,34 +31,34 @@ class Proposal
     #[ORM\Column(type: 'string', length: 50)]
     private string $status = self::STATUS_DRAFT;
 
-    #[ORM\Column(type: 'string', length: 255)]
+    #[ORM\Column(name: 'proposal_number', type: 'string', length: 255)]
     private string $proposalNumber;
 
-    #[ORM\Column(type: 'datetime')]
+    #[ORM\Column(name: 'start_date', type: 'datetime')]
     private \DateTimeInterface $startDate;
 
-    #[ORM\Column(type: 'datetime')]
+    #[ORM\Column(name: 'end_date', type: 'datetime')]
     private \DateTimeInterface $endDate;
 
-    #[ORM\Column(type: 'string', length: 255)]
+    #[ORM\Column(name: 'votes_for', type: 'string', length: 255)]
     private string $votesFor = '0';
 
-    #[ORM\Column(type: 'string', length: 255)]
+    #[ORM\Column(name: 'votes_against', type: 'string', length: 255)]
     private string $votesAgainst = '0';
 
-    #[ORM\Column(type: 'string', length: 255)]
+    #[ORM\Column(name: 'votes_abstain', type: 'string', length: 255)]
     private string $votesAbstain = '0';
 
-    #[ORM\Column(type: 'integer')]
+    #[ORM\Column(name: 'voter_count', type: 'integer')]
     private int $voterCount = 0;
 
     #[ORM\Column(type: 'string', length: 255)]
     private string $quorum = '0';
 
-    #[ORM\Column(type: 'datetime')]
+    #[ORM\Column(name: 'created_at', type: 'datetime')]
     private \DateTimeInterface $createdAt;
 
-    #[ORM\Column(type: 'datetime')]
+    #[ORM\Column(name: 'updated_at', type: 'datetime')]
     private \DateTimeInterface $updatedAt;
 
     #[ORM\OneToMany(mappedBy: 'proposal', targetEntity: Vote::class, cascade: ['persist', 'remove'])]

@@ -19,25 +19,25 @@ class Vote
     private ?int $id = null;
 
     #[ORM\ManyToOne(targetEntity: Proposal::class, inversedBy: 'votes')]
-    #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
+    #[ORM\JoinColumn(name: 'proposal_id', nullable: false, onDelete: 'CASCADE')]
     private Proposal $proposal;
 
-    #[ORM\Column(type: 'string', length: 255)]
+    #[ORM\Column(name: 'ki_address', type: 'string', length: 255)]
     private string $kiAddress;
 
-    #[ORM\Column(type: 'string', length: 20)]
+    #[ORM\Column(name: 'vote_choice', type: 'string', length: 20)]
     private string $voteChoice;
 
-    #[ORM\Column(type: 'string', length: 255)]
+    #[ORM\Column(name: 'voting_power', type: 'string', length: 255)]
     private string $votingPower;
 
     #[ORM\Column(type: 'text')]
     private string $signature;
 
-    #[ORM\Column(type: 'text')]
+    #[ORM\Column(name: 'pub_key', type: 'text')]
     private string $pubKey;
 
-    #[ORM\Column(type: 'datetime')]
+    #[ORM\Column(name: 'voted_at', type: 'datetime')]
     private \DateTimeInterface $votedAt;
 
     public function __construct()
