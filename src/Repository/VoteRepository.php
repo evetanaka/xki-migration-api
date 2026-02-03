@@ -52,13 +52,15 @@ class VoteRepository extends ServiceEntityRepository
 
     public function getVoteStatsByProposal(Proposal $proposal): array
     {
-        $votes = $this->createQueryBuilder('v')
-            ->select('v.voteChoice, SUM(v.votingPower) as totalPower, COUNT(v.id) as count')
-            ->where('v.proposal = :proposal')
-            ->setParameter('proposal', $proposal)
-            ->groupBy('v.voteChoice')
-            ->getQuery()
-            ->getResult();
+        // Use native SQL to cast voting_power to BIGINT before SUM (PostgreSQL)
+        $conn = $this->getEntityManager()->getConnection();
+        $sql = 'SELECT vote_choice, SUM(CAST(voting_power AS BIGINT)) as total_power, COUNT(id) as count 
+                FROM votes 
+                WHERE proposal_id = :proposal_id 
+                GROUP BY vote_choice';
+        
+        $result = $conn->executeQuery($sql, ['proposal_id' => $proposal->getId()]);
+        $votes = $result->fetchAllAssociative();
 
         $stats = [
             'for' => ['power' => '0', 'count' => 0],
@@ -67,8 +69,8 @@ class VoteRepository extends ServiceEntityRepository
         ];
 
         foreach ($votes as $vote) {
-            $stats[$vote['voteChoice']] = [
-                'power' => $vote['totalPower'] ?? '0',
+            $stats[$vote['vote_choice']] = [
+                'power' => $vote['total_power'] ?? '0',
                 'count' => (int) $vote['count'],
             ];
         }
