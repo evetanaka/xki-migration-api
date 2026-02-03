@@ -196,11 +196,18 @@ class GovernanceController extends AbstractController
     #[Route('/admin/proposals', methods: ['GET'])]
     public function adminGetAllProposals(): JsonResponse
     {
-        $proposals = $this->proposalRepo->findAllAdmin();
-
-        return $this->json([
-            'proposals' => array_map(fn(Proposal $p) => $p->toArray(), $proposals)
-        ]);
+        try {
+            $proposals = $this->proposalRepo->findAllAdmin();
+            return $this->json([
+                'proposals' => array_map(fn(Proposal $p) => $p->toArray(), $proposals)
+            ]);
+        } catch (\Throwable $e) {
+            return $this->json([
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ], 500);
+        }
     }
 
     /**
