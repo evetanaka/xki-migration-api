@@ -7,11 +7,11 @@ namespace DoctrineMigrations;
 use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
 
-final class Version20260203000000 extends AbstractMigration
+final class Version20260203010000 extends AbstractMigration
 {
     public function getDescription(): string
     {
-        return 'Add governance tables: proposals and votes';
+        return 'Recreate governance tables with correct PostgreSQL syntax';
     }
 
     public function up(Schema $schema): void
