@@ -52,7 +52,7 @@ class ProposalRepository extends ServiceEntityRepository
     public function findAllAdmin(): array
     {
         return $this->createQueryBuilder('p')
-            ->orderBy('p.createdAt', 'DESC')
+            ->orderBy('p.id', 'DESC')
             ->getQuery()
             ->getResult();
     }
