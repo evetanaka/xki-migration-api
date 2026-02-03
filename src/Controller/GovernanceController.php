@@ -173,19 +173,23 @@ class GovernanceController extends AbstractController
     #[Route('/proposals/{id}/votes', methods: ['GET'])]
     public function getProposalVotes(int $id, Request $request): JsonResponse
     {
-        $proposal = $this->proposalRepo->find($id);
+        try {
+            $proposal = $this->proposalRepo->find($id);
 
-        if (!$proposal) {
-            return $this->json(['error' => 'Proposal not found'], 404);
+            if (!$proposal) {
+                return $this->json(['error' => 'Proposal not found'], 404);
+            }
+
+            $votes = $this->voteRepo->findVotesByProposal($proposal);
+
+            return $this->json([
+                'proposal' => $proposal->toArray(),
+                'votes' => array_map(fn(Vote $v) => $v->toArray(), $votes),
+                'stats' => $this->voteRepo->getVoteStatsByProposal($proposal),
+            ]);
+        } catch (\Throwable $e) {
+            return $this->json(['error' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()], 500);
         }
-
-        $votes = $this->voteRepo->findVotesByProposal($proposal);
-
-        return $this->json([
-            'proposal' => $proposal->toArray(),
-            'votes' => array_map(fn(Vote $v) => $v->toArray(), $votes),
-            'stats' => $this->voteRepo->getVoteStatsByProposal($proposal),
-        ]);
     }
 
     // ============== ADMIN ENDPOINTS ==============
