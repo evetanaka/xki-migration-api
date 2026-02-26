@@ -30,16 +30,23 @@ class EligibilityController extends AbstractController
             ]);
         }
 
-        // Check if already claimed
-        $claim = $this->claimRepository->findOneBy([
+        // Check if claim is completed
+        $completedClaim = $this->claimRepository->findOneBy([
             'kiAddress' => $kiAddress,
             'status' => 'completed'
+        ]);
+
+        // Check if claim is pending validation
+        $pendingClaim = $this->claimRepository->findOneBy([
+            'kiAddress' => $kiAddress,
+            'status' => 'pending'
         ]);
 
         return $this->json([
             'eligible' => $eligibility->isEligible(),
             'balance' => $eligibility->getBalance(),
-            'claimed' => $claim !== null || $eligibility->isClaimed()
+            'claimed' => $completedClaim !== null || $eligibility->isClaimed(),
+            'pending' => $pendingClaim !== null
         ]);
     }
 }
