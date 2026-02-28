@@ -30,23 +30,42 @@ class EligibilityController extends AbstractController
             ]);
         }
 
-        // Check if claim is completed
-        $completedClaim = $this->claimRepository->findOneBy([
-            'kiAddress' => $kiAddress,
-            'status' => 'completed'
-        ]);
+        // Check for any existing claim (regardless of status)
+        $claim = $this->claimRepository->findOneBy(['kiAddress' => $kiAddress]);
 
-        // Check if claim is pending validation
-        $pendingClaim = $this->claimRepository->findOneBy([
-            'kiAddress' => $kiAddress,
-            'status' => 'pending'
-        ]);
-
-        return $this->json([
+        $response = [
             'eligible' => $eligibility->isEligible(),
             'balance' => $eligibility->getBalance(),
-            'claimed' => $completedClaim !== null || $eligibility->isClaimed(),
-            'pending' => $pendingClaim !== null
-        ]);
+            'claimed' => false,
+            'pending' => false,
+            'approved' => false,
+            'rejected' => false,
+        ];
+
+        if ($claim) {
+            $status = $claim->getStatus();
+            $response['amount'] = $claim->getAmount();
+            $response['claimStatus'] = $status;
+
+            switch ($status) {
+                case 'completed':
+                    $response['claimed'] = true;
+                    break;
+                case 'approved':
+                    $response['approved'] = true;
+                    break;
+                case 'rejected':
+                    $response['rejected'] = true;
+                    break;
+                case 'pending':
+                default:
+                    $response['pending'] = true;
+                    break;
+            }
+        } elseif ($eligibility->isClaimed()) {
+            $response['claimed'] = true;
+        }
+
+        return $this->json($response);
     }
 }

@@ -30,8 +30,8 @@ class StatsController extends AbstractController
             ? round(($this->claimRepository->countCompleted() / $totalEligible) * 100, 2) 
             : 0.0;
 
-        // Deadline set to 6 months from now (can be configured)
-        $deadline = (new \DateTime('+6 months'))->format('Y-m-d H:i:s');
+        // Fixed migration deadline
+        $deadline = '2026-05-01 00:00:00';
 
         return $this->json([
             'totalEligible' => $totalEligible,
