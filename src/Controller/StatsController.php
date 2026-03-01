@@ -26,7 +26,8 @@ class StatsController extends AbstractController
         $totalClaimedUxki = $this->eligibilityRepository->sumClaimedBalances();
         $totalClaimed = (int) floor((float) $totalClaimedUxki / 1_000_000);
 
-        $claimedCount = $this->claimRepository->countByStatus('approved') 
+        $claimedCount = $this->claimRepository->countByStatus('pending')
+                      + $this->claimRepository->countByStatus('approved') 
                       + $this->claimRepository->countByStatus('completed');
         $claimRate = $totalEligible > 0 
             ? round(($claimedCount / $totalEligible) * 100, 2) 

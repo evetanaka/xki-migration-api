@@ -52,8 +52,8 @@ class EligibilityRepository extends ServiceEntityRepository
             'SELECT SUM(CAST(e.balance AS BIGINT)) as total
              FROM eligibility e
              INNER JOIN claims c ON c.ki_address = e.ki_address
-             WHERE c.status IN (:approved, :completed)',
-            ['approved' => 'approved', 'completed' => 'completed']
+             WHERE c.status IN (:pending, :approved, :completed)',
+            ['pending' => 'pending', 'approved' => 'approved', 'completed' => 'completed']
         )->fetchOne();
 
         return $result ?? '0';
