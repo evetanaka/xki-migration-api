@@ -22,12 +22,14 @@ class StatsController extends AbstractController
     {
         $totalEligible = $this->eligibilityRepository->countEligible();
         
-        // Sum of XKI claimed (all claims, stored in uxki, convert to XKI)
-        $totalClaimedUxki = $this->claimRepository->sumAllClaimed();
-        $totalClaimed = (int) floor($totalClaimedUxki / 1_000_000);
+        // Sum of eligibility balances for approved + completed claims (in uxki)
+        $totalClaimedUxki = $this->eligibilityRepository->sumClaimedBalances();
+        $totalClaimed = (int) floor((float) $totalClaimedUxki / 1_000_000);
 
+        $claimedCount = $this->claimRepository->countByStatus('approved') 
+                      + $this->claimRepository->countByStatus('completed');
         $claimRate = $totalEligible > 0 
-            ? round(($this->claimRepository->countCompleted() / $totalEligible) * 100, 2) 
+            ? round(($claimedCount / $totalEligible) * 100, 2) 
             : 0.0;
 
         // Fixed migration deadline

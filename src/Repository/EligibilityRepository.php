@@ -40,4 +40,22 @@ class EligibilityRepository extends ServiceEntityRepository
             ->getQuery()
             ->getSingleScalarResult();
     }
+
+    /**
+     * Sum balances from eligibility table for wallets that have an approved or completed claim.
+     * Returns total in uxki.
+     */
+    public function sumClaimedBalances(): string
+    {
+        $conn = $this->getEntityManager()->getConnection();
+        $result = $conn->executeQuery(
+            'SELECT SUM(CAST(e.balance AS BIGINT)) as total
+             FROM eligibility e
+             INNER JOIN claims c ON c.ki_address = e.ki_address
+             WHERE c.status IN (:approved, :completed)',
+            ['approved' => 'approved', 'completed' => 'completed']
+        )->fetchOne();
+
+        return $result ?? '0';
+    }
 }
