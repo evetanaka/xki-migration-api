@@ -346,6 +346,31 @@ class AdminController extends AbstractController
     }
 
     /**
+     * Delete a claim (allows user to re-claim with correct wallet)
+     */
+    #[Route('/claims/{id}', name: 'api_admin_claims_delete', methods: ['DELETE'])]
+    public function deleteClaim(Request $request, int $id): JsonResponse
+    {
+        if (!$this->verifyToken($request)) {
+            return $this->json(['error' => 'Unauthorized'], 401);
+        }
+
+        $claim = $this->claimRepository->find($id);
+
+        if (!$claim) {
+            return $this->json(['error' => 'Claim not found'], 404);
+        }
+
+        $kiAddress = $claim->getKiAddress();
+        $this->claimRepository->remove($claim);
+
+        return $this->json([
+            'success' => true,
+            'message' => "Claim #$id deleted. Address $kiAddress can now re-claim."
+        ]);
+    }
+
+    /**
      * Fix claims with amount=0 by cross-referencing with eligibility
      */
     #[Route('/fix-amounts', name: 'api_admin_fix_amounts', methods: ['POST'])]
