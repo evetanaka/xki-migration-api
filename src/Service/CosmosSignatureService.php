@@ -3,7 +3,6 @@
 namespace App\Service;
 
 use Elliptic\EC;
-use BitWasp\Bech32\Bech32;
 
 /**
  * Service de vérification de signatures Cosmos (secp256k1)
@@ -134,7 +133,7 @@ class CosmosSignatureService
         $words = $this->convertBits(array_values(unpack('C*', $ripemd160Hash)), 8, 5);
 
         // Encode en bech32 avec le préfixe 'ki'
-        return Bech32::encode('ki', $words);
+        return \BitWasp\Bech32\encode('ki', $words);
     }
 
     /**

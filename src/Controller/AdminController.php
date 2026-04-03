@@ -103,7 +103,7 @@ class AdminController extends AbstractController
         $words = $this->convertBits(array_values(unpack('C*', $ripemd160Hash)), 8, 5);
         
         // Encode with 'ki' prefix
-        return \BitWasp\Bech32\Bech32::encode('ki', $words);
+        return \BitWasp\Bech32\encode('ki', $words);
     }
 
     /**
