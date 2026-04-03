@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Repository\ClaimRepository;
 use App\Repository\EligibilityRepository;
+use App\Service\ClaimValidationService;
 use App\Service\CosmosSignatureService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -24,7 +25,8 @@ class AdminController extends AbstractController
     public function __construct(
         private ClaimRepository $claimRepository,
         private EligibilityRepository $eligibilityRepository,
-        private CosmosSignatureService $cosmosSignatureService
+        private CosmosSignatureService $cosmosSignatureService,
+        private ClaimValidationService $claimValidationService
     ) {
     }
 
@@ -404,6 +406,59 @@ class AdminController extends AbstractController
             'success' => true,
             'fixed' => count($fixed),
             'claims' => $fixed
+        ]);
+    }
+
+    /**
+     * Validate all pending claims by verifying their Cosmos signatures.
+     * Approved if signature is valid, rejected if not.
+     */
+    #[Route('/validate-all', name: 'api_admin_validate_all', methods: ['POST'])]
+    public function validateAll(Request $request): JsonResponse
+    {
+        if (!$this->verifyToken($request)) {
+            return $this->json(['error' => 'Unauthorized'], 401);
+        }
+
+        try {
+            $result = $this->claimValidationService->validateAllPending();
+
+            return $this->json([
+                'success' => true,
+                'approved' => $result['approved'],
+                'rejected' => $result['rejected'],
+                'total' => $result['total'],
+                'details' => $result['details'],
+            ]);
+        } catch (\Exception $e) {
+            return $this->json([
+                'error' => 'Validation failed: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Validate a single claim's signature (without changing status).
+     */
+    #[Route('/claims/{id}/verify', name: 'api_admin_claims_verify', methods: ['POST'])]
+    public function verifyClaim(Request $request, int $id): JsonResponse
+    {
+        if (!$this->verifyToken($request)) {
+            return $this->json(['error' => 'Unauthorized'], 401);
+        }
+
+        $claim = $this->claimRepository->find($id);
+        if (!$claim) {
+            return $this->json(['error' => 'Claim not found'], 404);
+        }
+
+        $result = $this->claimValidationService->validateClaim($claim);
+
+        return $this->json([
+            'id' => $claim->getId(),
+            'kiAddress' => $claim->getKiAddress(),
+            'valid' => $result['valid'],
+            'reason' => $result['reason'],
         ]);
     }
 }
