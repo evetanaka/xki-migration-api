@@ -37,6 +37,18 @@ class Claim
     #[ORM\Column(type: 'string', length: 255, nullable: true)]
     private ?string $nonce = null;
 
+    #[ORM\Column(type: 'boolean')]
+    private bool $isTeam = false;
+
+    #[ORM\Column(type: 'bigint', nullable: true)]
+    private ?int $initialAmountDistributed = null;
+
+    #[ORM\Column(type: 'bigint', nullable: true)]
+    private ?int $slashedAmount = null;
+
+    #[ORM\Column(type: 'bigint', nullable: true)]
+    private ?int $originalAmount = null;
+
     #[ORM\Column(type: 'text', nullable: true)]
     private ?string $adminNotes = null;
 
@@ -141,6 +153,50 @@ class Claim
     public function setNonce(?string $nonce): self
     {
         $this->nonce = $nonce;
+        return $this;
+    }
+
+    public function isTeam(): bool
+    {
+        return $this->isTeam;
+    }
+
+    public function setIsTeam(bool $isTeam): self
+    {
+        $this->isTeam = $isTeam;
+        return $this;
+    }
+
+    public function getInitialAmountDistributed(): ?int
+    {
+        return $this->initialAmountDistributed;
+    }
+
+    public function setInitialAmountDistributed(?int $initialAmountDistributed): self
+    {
+        $this->initialAmountDistributed = $initialAmountDistributed;
+        return $this;
+    }
+
+    public function getSlashedAmount(): ?int
+    {
+        return $this->slashedAmount;
+    }
+
+    public function setSlashedAmount(?int $slashedAmount): self
+    {
+        $this->slashedAmount = $slashedAmount;
+        return $this;
+    }
+
+    public function getOriginalAmount(): ?int
+    {
+        return $this->originalAmount;
+    }
+
+    public function setOriginalAmount(?int $originalAmount): self
+    {
+        $this->originalAmount = $originalAmount;
         return $this;
     }
 

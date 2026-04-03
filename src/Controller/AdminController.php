@@ -30,6 +30,32 @@ class AdminController extends AbstractController
     ) {
     }
 
+    private function serializeClaim(\App\Entity\Claim $claim, bool $full = false): array
+    {
+        $data = [
+            'id' => $claim->getId(),
+            'kiAddress' => $claim->getKiAddress(),
+            'ethAddress' => $claim->getEthAddress(),
+            'amount' => $claim->getAmount(),
+            'status' => $claim->getStatus(),
+            'txHash' => $claim->getTxHash(),
+            'isTeam' => $claim->isTeam(),
+            'initialAmountDistributed' => $claim->getInitialAmountDistributed(),
+            'slashedAmount' => $claim->getSlashedAmount(),
+            'originalAmount' => $claim->getOriginalAmount(),
+            'createdAt' => $claim->getCreatedAt()->format('Y-m-d H:i:s'),
+            'claimedAt' => $claim->getClaimedAt()?->format('Y-m-d H:i:s'),
+            'adminNotes' => $claim->getAdminNotes(),
+        ];
+
+        if ($full) {
+            $data['signature'] = $claim->getSignature();
+            $data['pubKey'] = $claim->getPubKey();
+        }
+
+        return $data;
+    }
+
     /**
      * Authenticate admin with Keplr signature
      */
@@ -232,19 +258,7 @@ class AdminController extends AbstractController
                 $claims = $this->claimRepository->findBy([], ['createdAt' => 'DESC']);
             }
 
-            $data = array_map(function ($claim) {
-                return [
-                    'id' => $claim->getId(),
-                    'kiAddress' => $claim->getKiAddress(),
-                    'ethAddress' => $claim->getEthAddress(),
-                    'amount' => $claim->getAmount(),
-                    'status' => $claim->getStatus(),
-                    'txHash' => $claim->getTxHash(),
-                    'createdAt' => $claim->getCreatedAt()->format('Y-m-d H:i:s'),
-                    'claimedAt' => $claim->getClaimedAt()?->format('Y-m-d H:i:s'),
-                    'adminNotes' => $claim->getAdminNotes()
-                ];
-            }, $claims);
+            $data = array_map(fn($claim) => $this->serializeClaim($claim), $claims);
 
             return $this->json($data);
         } catch (\Exception $e) {
@@ -257,7 +271,7 @@ class AdminController extends AbstractController
     /**
      * Get single claim details
      */
-    #[Route('/claims/{id}', name: 'api_admin_claims_get', methods: ['GET'])]
+    #[Route('/claims/{id}', name: 'api_admin_claims_get', methods: ['GET'], requirements: ['id' => '\d+'])]
     public function getClaim(Request $request, int $id): JsonResponse
     {
         if (!$this->verifyToken($request)) {
@@ -270,19 +284,7 @@ class AdminController extends AbstractController
             return $this->json(['error' => 'Claim not found'], 404);
         }
 
-        return $this->json([
-            'id' => $claim->getId(),
-            'kiAddress' => $claim->getKiAddress(),
-            'ethAddress' => $claim->getEthAddress(),
-            'amount' => $claim->getAmount(),
-            'status' => $claim->getStatus(),
-            'signature' => $claim->getSignature(),
-            'pubKey' => $claim->getPubKey(),
-            'txHash' => $claim->getTxHash(),
-            'createdAt' => $claim->getCreatedAt()->format('Y-m-d H:i:s'),
-            'claimedAt' => $claim->getClaimedAt()?->format('Y-m-d H:i:s'),
-            'adminNotes' => $claim->getAdminNotes()
-        ]);
+        return $this->json($this->serializeClaim($claim, true));
     }
 
     /**
@@ -331,19 +333,45 @@ class AdminController extends AbstractController
             $claim->setAmount((int) $data['amount']);
         }
 
+        // Team wallet handling
+        if (isset($data['isTeam'])) {
+            $wantTeam = (bool) $data['isTeam'];
+            $initialDist = isset($data['initialAmountDistributed']) ? (int) $data['initialAmountDistributed'] : null;
+
+            if ($wantTeam && !$claim->isTeam()) {
+                // Marking as team — apply slash
+                if ($initialDist === null || $initialDist <= 0) {
+                    return $this->json(['error' => 'initialAmountDistributed is required when marking as team'], 400);
+                }
+                $claim->setIsTeam(true);
+                $claim->setInitialAmountDistributed($initialDist);
+                $claim->setOriginalAmount($claim->getAmount());
+                $slashed = (int) floor($initialDist / 2);
+                $claim->setSlashedAmount($slashed);
+                $claim->setAmount($claim->getOriginalAmount() - $slashed);
+            } elseif (!$wantTeam && $claim->isTeam()) {
+                // Removing team flag — restore original amount
+                if ($claim->getOriginalAmount() !== null) {
+                    $claim->setAmount($claim->getOriginalAmount());
+                }
+                $claim->setIsTeam(false);
+                $claim->setInitialAmountDistributed(null);
+                $claim->setSlashedAmount(null);
+                $claim->setOriginalAmount(null);
+            } elseif ($wantTeam && $claim->isTeam() && $initialDist !== null) {
+                // Updating initialAmountDistributed — recalculate slash
+                $claim->setInitialAmountDistributed($initialDist);
+                $slashed = (int) floor($initialDist / 2);
+                $claim->setSlashedAmount($slashed);
+                $claim->setAmount($claim->getOriginalAmount() - $slashed);
+            }
+        }
+
         $this->claimRepository->save($claim);
 
         return $this->json([
             'success' => true,
-            'claim' => [
-                'id' => $claim->getId(),
-                'kiAddress' => $claim->getKiAddress(),
-                'ethAddress' => $claim->getEthAddress(),
-                'status' => $claim->getStatus(),
-                'txHash' => $claim->getTxHash(),
-                'adminNotes' => $claim->getAdminNotes(),
-                'claimedAt' => $claim->getClaimedAt()?->format('Y-m-d H:i:s')
-            ]
+            'claim' => $this->serializeClaim($claim, true)
         ]);
     }
 
@@ -406,6 +434,112 @@ class AdminController extends AbstractController
             'success' => true,
             'fixed' => count($fixed),
             'claims' => $fixed
+        ]);
+    }
+
+    /**
+     * Search claims by Ki or ETH address.
+     */
+    #[Route('/claims/search', name: 'api_admin_claims_search', methods: ['GET'])]
+    public function searchClaims(Request $request): JsonResponse
+    {
+        if (!$this->verifyToken($request)) {
+            return $this->json(['error' => 'Unauthorized'], 401);
+        }
+
+        $q = trim($request->query->get('q', ''));
+        if (strlen($q) < 3) {
+            return $this->json(['error' => 'Query must be at least 3 characters'], 400);
+        }
+
+        $qb = $this->claimRepository->createQueryBuilder('c');
+        $qb->where('LOWER(c.kiAddress) LIKE :q')
+            ->orWhere('LOWER(c.ethAddress) LIKE :q')
+            ->setParameter('q', '%' . strtolower($q) . '%')
+            ->orderBy('c.createdAt', 'DESC')
+            ->setMaxResults(50);
+
+        $claims = $qb->getQuery()->getResult();
+
+        return $this->json(array_map(fn($c) => $this->serializeClaim($c), $claims));
+    }
+
+    /**
+     * Batch mark wallets as team and apply 50% slash on initialAmountDistributed.
+     * Expects JSON: { wallets: [{kiAddress, initialAmountDistributed}, ...] }
+     */
+    #[Route('/claims/mark-team', name: 'api_admin_claims_mark_team', methods: ['POST'])]
+    public function markTeam(Request $request): JsonResponse
+    {
+        if (!$this->verifyToken($request)) {
+            return $this->json(['error' => 'Unauthorized'], 401);
+        }
+
+        $data = json_decode($request->getContent(), true);
+        $wallets = $data['wallets'] ?? [];
+
+        if (empty($wallets)) {
+            return $this->json(['error' => 'No wallets provided'], 400);
+        }
+
+        $results = [];
+        $marked = 0;
+        $skipped = 0;
+        $notFound = 0;
+
+        foreach ($wallets as $entry) {
+            $kiAddress = $entry['kiAddress'] ?? null;
+            $initialDist = isset($entry['initialAmountDistributed']) ? (int) $entry['initialAmountDistributed'] : null;
+
+            if (!$kiAddress || !$initialDist || $initialDist <= 0) {
+                $results[] = ['kiAddress' => $kiAddress, 'status' => 'error', 'reason' => 'Missing kiAddress or initialAmountDistributed'];
+                continue;
+            }
+
+            $claim = $this->claimRepository->findOneBy(['kiAddress' => $kiAddress]);
+            if (!$claim) {
+                $results[] = ['kiAddress' => $kiAddress, 'status' => 'not_found'];
+                $notFound++;
+                continue;
+            }
+
+            if ($claim->isTeam()) {
+                $results[] = ['kiAddress' => $kiAddress, 'status' => 'skipped', 'reason' => 'Already marked as team'];
+                $skipped++;
+                continue;
+            }
+
+            $claim->setIsTeam(true);
+            $claim->setInitialAmountDistributed($initialDist);
+            $claim->setOriginalAmount($claim->getAmount());
+            $slashed = (int) floor($initialDist / 2);
+            $claim->setSlashedAmount($slashed);
+            $claim->setAmount($claim->getAmount() - $slashed);
+
+            $claim->setAdminNotes(
+                trim(($claim->getAdminNotes() ?? '') . "\n[Auto] Marked as team, slashed " . ($slashed / 1000000) . " XKI — " . date('Y-m-d H:i:s'))
+            );
+
+            $this->claimRepository->save($claim, false);
+            $marked++;
+
+            $results[] = [
+                'kiAddress' => $kiAddress,
+                'status' => 'marked',
+                'originalAmount' => $claim->getOriginalAmount(),
+                'slashedAmount' => $slashed,
+                'finalAmount' => $claim->getAmount(),
+            ];
+        }
+
+        $this->claimRepository->getEntityManager()->flush();
+
+        return $this->json([
+            'success' => true,
+            'marked' => $marked,
+            'skipped' => $skipped,
+            'notFound' => $notFound,
+            'results' => $results,
         ]);
     }
 
