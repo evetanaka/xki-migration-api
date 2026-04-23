@@ -18,7 +18,7 @@ RUN sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/html/public|g' /e
     && echo '<Directory /var/www/html/public>\nAllowOverride All\nRequire all granted\n</Directory>' >> /etc/apache2/apache2.conf
 
 # IMPORTANT: DO NOT cache warmup at build time - let it happen at runtime
-RUN echo '#!/bin/bash\nset -e\nrm -rf var/cache/*\nphp bin/console cache:clear --env=prod\nphp bin/console cache:warmup --env=prod\necho "DEBUG ROUTES:" >&2\nphp bin/console debug:router --env=prod 2>&1 >&2\nphp bin/console doctrine:migrations:migrate --no-interaction 2>&1 || true\nexec apache2-foreground' > /entrypoint.sh && chmod +x /entrypoint.sh
+RUN echo '#!/bin/bash\nset -e\nrm -rf var/cache/*\nphp bin/console cache:clear --env=prod\nphp bin/console cache:warmup --env=prod\necho "DEBUG ROUTES:" >&2\nphp bin/console debug:router --env=prod 2>&1 >&2\nphp bin/console doctrine:migrations:migrate --no-interaction 2>&1 || true\n\n# Auto-import NFT CSV if table is empty\nNFT_COUNT=$(php bin/console doctrine:query:sql "SELECT COUNT(*) as c FROM nft_asset" --env=prod 2>/dev/null | grep -oP '"\\d+"' | tr -d '"' || echo "0")\nif [ "$NFT_COUNT" = "0" ] && [ -f data/nft-metadata.csv ]; then\n  echo "NFT table empty, importing CSV..."\n  php bin/console app:import-nft-csv data/nft-metadata.csv --clear --env=prod 2>&1\n  echo "NFT import complete"\nfi\n\nexec apache2-foreground' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 EXPOSE 80
 CMD ["/entrypoint.sh"]
