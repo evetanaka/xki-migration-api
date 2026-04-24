@@ -182,15 +182,6 @@ class NftController extends AbstractController
     #[Route('/nonce/{kiAddress}', methods: ['GET'])]
     public function nonce(string $kiAddress): JsonResponse
     {
-        try {
-            return $this->doNonce($kiAddress);
-        } catch (\Throwable $e) {
-            return $this->json(['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()], 500);
-        }
-    }
-
-    private function doNonce(string $kiAddress): JsonResponse
-    {
         if (!preg_match('/^ki1[a-z0-9]{38}$/', $kiAddress)) {
             return $this->json(['error' => 'Invalid Ki Chain address format'], Response::HTTP_BAD_REQUEST);
         }

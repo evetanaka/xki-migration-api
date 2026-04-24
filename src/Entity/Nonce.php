@@ -26,9 +26,13 @@ class Nonce
     #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
     private ?bool $used = false;
 
+    #[ORM\Column(type: Types::DATETIME_MUTABLE)]
+    private ?\DateTimeInterface $createdAt = null;
+
     public function __construct()
     {
         $this->used = false;
+        $this->createdAt = new \DateTime();
     }
 
     public function getNonce(): ?string
