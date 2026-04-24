@@ -2,12 +2,16 @@
 
 namespace App\Controller;
 
+use App\Entity\NftClaim;
 use App\Entity\NftClaimConfig;
+use App\Entity\Nonce;
 use App\Repository\NftAssetRepository;
 use App\Repository\NftClaimRepository;
-use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use App\Repository\NonceRepository;
+use App\Service\CosmosSignatureService;
 use App\Service\NftAllocationService;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -19,7 +23,9 @@ class NftController extends AbstractController
     public function __construct(
         private NftAssetRepository $nftAssetRepo,
         private NftClaimRepository $nftClaimRepo,
+        private NonceRepository $nonceRepo,
         private NftAllocationService $allocationService,
+        private CosmosSignatureService $signatureService,
         private EntityManagerInterface $em,
     ) {}
 
@@ -164,6 +170,182 @@ class NftController extends AbstractController
             'processed_at' => $claim->getProcessedAt()?->format('c'),
             'tx_hash' => $claim->getTxHash(),
         ]);
+    }
+
+    /* ═══════════════════════════════════════════
+     *  PHASE 2 — Nonce & Claim Submission
+     * ═══════════════════════════════════════════ */
+
+    /**
+     * Generate a nonce for Keplr signature.
+     */
+    #[Route('/nonce/{kiAddress}', methods: ['GET'])]
+    public function nonce(string $kiAddress): JsonResponse
+    {
+        if (!preg_match('/^ki1[a-z0-9]{38}$/', $kiAddress)) {
+            return $this->json(['error' => 'Invalid Ki Chain address format'], Response::HTTP_BAD_REQUEST);
+        }
+
+        if (!$this->isClaimEnabled()) {
+            return $this->json(['error' => 'NFT claim is currently disabled'], Response::HTTP_FORBIDDEN);
+        }
+
+        if ($this->isDeadlinePassed()) {
+            return $this->json(['error' => 'Claim deadline has passed'], Response::HTTP_FORBIDDEN);
+        }
+
+        $nftCount = count($this->nftAssetRepo->findByOwner($kiAddress));
+        if ($nftCount === 0) {
+            return $this->json(['error' => 'No eligible NFTs found for this address'], Response::HTTP_NOT_FOUND);
+        }
+
+        $existingClaim = $this->nftClaimRepo->findByKiAddress($kiAddress);
+        if ($existingClaim) {
+            return $this->json(['error' => 'Claim already submitted for this address'], Response::HTTP_CONFLICT);
+        }
+
+        $this->nonceRepo->deleteExpiredNonces();
+
+        $nonceValue = bin2hex(random_bytes(32));
+        $expiresAt = new \DateTime('+30 minutes');
+
+        $nonce = new Nonce();
+        $nonce->setNonce($nonceValue);
+        $nonce->setKiAddress($kiAddress);
+        $nonce->setEthAddress('');
+        $nonce->setExpiresAt($expiresAt);
+        $this->nonceRepo->save($nonce, true);
+
+        return $this->json([
+            'nonce' => $nonceValue,
+            'expires_at' => $expiresAt->format('c'),
+            'message' => $this->buildSignMessage($kiAddress, $nonceValue),
+        ]);
+    }
+
+    /**
+     * Submit a claim with Keplr signature.
+     */
+    #[Route('/claims', methods: ['POST'])]
+    public function submitClaim(Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true);
+        if (!$data) {
+            return $this->json(['error' => 'Invalid JSON body'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $required = ['ki_address', 'eth_address', 'signature', 'pub_key', 'nonce'];
+        foreach ($required as $field) {
+            if (empty($data[$field])) {
+                return $this->json(['error' => "Missing required field: $field"], Response::HTTP_BAD_REQUEST);
+            }
+        }
+
+        $kiAddress = $data['ki_address'];
+        $ethAddress = $data['eth_address'];
+        $signature = $data['signature'];
+        $pubKey = $data['pub_key'];
+        $nonceValue = $data['nonce'];
+
+        // Validate formats
+        if (!preg_match('/^ki1[a-z0-9]{38}$/', $kiAddress)) {
+            return $this->json(['error' => 'Invalid Ki Chain address format'], Response::HTTP_BAD_REQUEST);
+        }
+        if (!preg_match('/^0x[a-fA-F0-9]{40}$/', $ethAddress)) {
+            return $this->json(['error' => 'Invalid Ethereum address format'], Response::HTTP_BAD_REQUEST);
+        }
+
+        if (!$this->isClaimEnabled()) {
+            return $this->json(['error' => 'NFT claim is currently disabled'], Response::HTTP_FORBIDDEN);
+        }
+        if ($this->isDeadlinePassed()) {
+            return $this->json(['error' => 'Claim deadline has passed'], Response::HTTP_FORBIDDEN);
+        }
+
+        // Validate nonce
+        if (!$this->nonceRepo->isNonceValid($nonceValue)) {
+            return $this->json(['error' => 'Invalid or expired nonce. Please request a new one.'], Response::HTTP_BAD_REQUEST);
+        }
+        $nonceEntity = $this->nonceRepo->findByNonce($nonceValue);
+        if ($nonceEntity->getKiAddress() !== $kiAddress) {
+            return $this->json(['error' => 'Nonce does not match this address'], Response::HTTP_BAD_REQUEST);
+        }
+
+        // Check for existing claim
+        $existingClaim = $this->nftClaimRepo->findByKiAddress($kiAddress);
+        if ($existingClaim) {
+            return $this->json(['error' => 'Claim already submitted for this address'], Response::HTTP_CONFLICT);
+        }
+
+        // Check NFTs exist
+        $nfts = $this->nftAssetRepo->findByOwner($kiAddress);
+        if (empty($nfts)) {
+            return $this->json(['error' => 'No eligible NFTs found'], Response::HTTP_NOT_FOUND);
+        }
+
+        // Verify signature
+        $signMessage = $this->buildSignMessage($kiAddress, $nonceValue);
+        $isValid = $this->signatureService->verifySignature($signMessage, $signature, $pubKey, $kiAddress);
+        if (!$isValid) {
+            return $this->json(['error' => 'Invalid signature. Please try again.'], Response::HTTP_UNAUTHORIZED);
+        }
+
+        // Mark nonce as used
+        $this->nonceRepo->markAsUsed($nonceValue);
+
+        // Create claim
+        $totalAllocation = $this->nftAssetRepo->getTotalAllocationByOwner($kiAddress);
+        $nftCount = count($nfts);
+
+        $claim = new NftClaim();
+        $claim->setKiAddress($kiAddress);
+        $claim->setEthAddress($ethAddress);
+        $claim->setTotalAllocation($totalAllocation);
+        $claim->setNftCount($nftCount);
+        $claim->setSignature($signature);
+        $claim->setPubKey($pubKey);
+        $claim->setNonce($nonceValue);
+        $claim->setSignedMessage($signMessage);
+        $claim->setStatus('pending');
+
+        $this->em->persist($claim);
+
+        // Link NFTs to claim
+        foreach ($nfts as $nft) {
+            $nft->setClaim($claim);
+        }
+
+        $this->em->flush();
+
+        return $this->json([
+            'claim_id' => $claim->getId(),
+            'ki_address' => $claim->getKiAddress(),
+            'eth_address' => $claim->getEthAddress(),
+            'total_allocation' => $claim->getTotalAllocation(),
+            'nft_count' => $claim->getNftCount(),
+            'status' => $claim->getStatus(),
+            'created_at' => $claim->getCreatedAt()->format('c'),
+        ], Response::HTTP_CREATED);
+    }
+
+    /* ── Helpers ── */
+
+    private function buildSignMessage(string $kiAddress, string $nonce): string
+    {
+        return "I hereby claim my \$XKI NFT airdrop allocation.\n\nKi Address: {$kiAddress}\nNonce: {$nonce}\n\nThis signature proves ownership of the Ki Chain wallet and authorizes the transfer of allocated \$XKI tokens to the specified Ethereum address.";
+    }
+
+    private function isClaimEnabled(): bool
+    {
+        $config = $this->em->getRepository(NftClaimConfig::class)->find('enabled');
+        return $config && $config->getValue() === 'true';
+    }
+
+    private function isDeadlinePassed(): bool
+    {
+        $config = $this->em->getRepository(NftClaimConfig::class)->find('deadline');
+        if (!$config) return false;
+        return new \DateTime() > new \DateTime($config->getValue());
     }
 
     /**
