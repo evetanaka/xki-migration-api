@@ -6,7 +6,10 @@ use App\Entity\NftClaimConfig;
 use App\Repository\NftAssetRepository;
 use App\Repository\NftClaimRepository;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use App\Service\NftAllocationService;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 
@@ -16,6 +19,8 @@ class NftController extends AbstractController
     public function __construct(
         private NftAssetRepository $nftAssetRepo,
         private NftClaimRepository $nftClaimRepo,
+        private NftAllocationService $allocationService,
+        private EntityManagerInterface $em,
     ) {}
 
     /**
@@ -158,6 +163,98 @@ class NftController extends AbstractController
             'created_at' => $claim->getCreatedAt()->format('c'),
             'processed_at' => $claim->getProcessedAt()?->format('c'),
             'tx_hash' => $claim->getTxHash(),
+        ]);
+    }
+
+    /**
+     * Admin endpoint to trigger CSV import.
+     * Protected by ADMIN_API_KEY header.
+     */
+    #[Route('/admin/import-csv', methods: ['POST'])]
+    public function importCsv(Request $request): JsonResponse
+    {
+        $apiKey = $request->headers->get('X-Admin-Key');
+        if (!$apiKey || $apiKey !== $_ENV['ADMIN_API_KEY']) {
+            return $this->json(['error' => 'Unauthorized'], Response::HTTP_UNAUTHORIZED);
+        }
+
+        $csvPath = $request->request->get('path', 'data/nft-metadata.csv');
+        $poolTotal = (float) $request->request->get('pool', '5000000');
+        $clear = $request->request->getBoolean('clear', true);
+
+        if (!file_exists($csvPath)) {
+            return $this->json(['error' => "CSV not found: $csvPath"], Response::HTTP_BAD_REQUEST);
+        }
+
+        // Parse CSV
+        $handle = fopen($csvPath, 'r');
+        $header = fgetcsv($handle);
+        $rows = [];
+        $scarcityCounts = [];
+        while (($data = fgetcsv($handle)) !== false) {
+            if (count($data) < 6) continue;
+            $collection = $data[0];
+            if (!str_starts_with($collection, 'CosmonNFT')) continue;
+            $scarcity = $data[5];
+            $scarcityCounts[$scarcity] = ($scarcityCounts[$scarcity] ?? 0) + 1;
+            $rows[] = $data;
+        }
+        fclose($handle);
+
+        // Calculate allocations
+        $allocations = $this->allocationService->calculateAllocations($scarcityCounts, $poolTotal);
+
+        // Clear if requested
+        if ($clear) {
+            $this->em->createQuery('DELETE FROM App\Entity\NftAsset')->execute();
+        }
+
+        // Batch insert
+        $batchSize = 500;
+        $imported = 0;
+        foreach ($rows as $i => $data) {
+            $asset = new \App\Entity\NftAsset();
+            $asset->setCollection($data[0]);
+            $asset->setTokenId($data[1]);
+            $asset->setOwner($data[2]);
+            $asset->setName($data[3]);
+            $asset->setImage($data[4]);
+            $asset->setScarcity($data[5]);
+            $asset->setPersonality($data[6] ?? null);
+            $asset->setGeographical($data[7] ?? null);
+            $asset->setTime($data[8] ?? null);
+            $asset->setNationality($data[9] ?? null);
+            $asset->setAssetId($data[10] ?? null);
+            $asset->setShortDescription($data[11] ?? null);
+            $asset->setAllocation((string) $allocations[$data[5]]);
+            $this->em->persist($asset);
+            $imported++;
+            if (($i + 1) % $batchSize === 0) {
+                $this->em->flush();
+                $this->em->clear();
+            }
+        }
+        $this->em->flush();
+        $this->em->clear();
+
+        // Seed/update config
+        $configs = ['deadline' => '2026-07-01T00:00:00Z', 'pool_total' => (string) $poolTotal, 'enabled' => 'true'];
+        foreach ($configs as $key => $value) {
+            $existing = $this->em->getRepository(NftClaimConfig::class)->find($key);
+            if (!$existing) {
+                $config = new NftClaimConfig();
+                $config->setKey($key);
+                $config->setValue($value);
+                $this->em->persist($config);
+            }
+        }
+        $this->em->flush();
+
+        return $this->json([
+            'imported' => $imported,
+            'scarcity_counts' => $scarcityCounts,
+            'allocations' => $allocations,
+            'unique_wallets' => $this->nftAssetRepo->countUniqueOwners(),
         ]);
     }
 }
