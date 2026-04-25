@@ -348,6 +348,210 @@ class NftController extends AbstractController
         return new \DateTime() > new \DateTime($config->getValue());
     }
 
+    /* ═══════════════════════════════════════════
+     *  PHASE 5 — Admin Endpoints
+     * ═══════════════════════════════════════════ */
+
+    private function checkAdmin(Request $request): ?JsonResponse
+    {
+        $apiKey = $request->headers->get('X-Admin-Key');
+        if (!$apiKey || $apiKey !== $_ENV['ADMIN_API_KEY']) {
+            return $this->json(['error' => 'Unauthorized'], Response::HTTP_UNAUTHORIZED);
+        }
+        return null;
+    }
+
+    /**
+     * List all claims with pagination and filters.
+     */
+    #[Route('/admin/claims', methods: ['GET'])]
+    public function adminListClaims(Request $request): JsonResponse
+    {
+        if ($err = $this->checkAdmin($request)) return $err;
+
+        $page = max(1, (int) $request->query->get('page', 1));
+        $limit = min(100, max(1, (int) $request->query->get('limit', 50)));
+        $status = $request->query->get('status');
+        $search = $request->query->get('search');
+        $offset = ($page - 1) * $limit;
+
+        $qb = $this->nftClaimRepo->createQueryBuilder('c')
+            ->orderBy('c.createdAt', 'DESC');
+
+        if ($status) {
+            $qb->andWhere('c.status = :status')->setParameter('status', $status);
+        }
+        if ($search) {
+            $qb->andWhere('c.kiAddress LIKE :search OR c.ethAddress LIKE :search')
+               ->setParameter('search', "%$search%");
+        }
+
+        $total = (clone $qb)->select('COUNT(c.id)')->getQuery()->getSingleScalarResult();
+
+        $claims = $qb->setFirstResult($offset)->setMaxResults($limit)->getQuery()->getResult();
+
+        return $this->json([
+            'claims' => array_map(fn(NftClaim $c) => [
+                'id' => $c->getId(),
+                'ki_address' => $c->getKiAddress(),
+                'eth_address' => $c->getEthAddress(),
+                'total_allocation' => $c->getTotalAllocation(),
+                'nft_count' => $c->getNftCount(),
+                'status' => $c->getStatus(),
+                'created_at' => $c->getCreatedAt()->format('c'),
+                'processed_at' => $c->getProcessedAt()?->format('c'),
+                'tx_hash' => $c->getTxHash(),
+            ], $claims),
+            'pagination' => [
+                'page' => $page,
+                'limit' => $limit,
+                'total' => (int) $total,
+                'pages' => (int) ceil($total / $limit),
+            ],
+        ]);
+    }
+
+    /**
+     * Update claim status (pending → processing → completed/failed).
+     */
+    #[Route('/admin/claims/{id}/status', methods: ['PATCH'])]
+    public function adminUpdateStatus(int $id, Request $request): JsonResponse
+    {
+        if ($err = $this->checkAdmin($request)) return $err;
+
+        $claim = $this->nftClaimRepo->find($id);
+        if (!$claim) {
+            return $this->json(['error' => 'Claim not found'], Response::HTTP_NOT_FOUND);
+        }
+
+        $data = json_decode($request->getContent(), true);
+        $newStatus = $data['status'] ?? null;
+        $txHash = $data['tx_hash'] ?? null;
+
+        $valid = ['pending', 'processing', 'completed', 'failed'];
+        if (!$newStatus || !in_array($newStatus, $valid)) {
+            return $this->json(['error' => 'Invalid status. Must be: ' . implode(', ', $valid)], Response::HTTP_BAD_REQUEST);
+        }
+
+        $claim->setStatus($newStatus);
+        if ($txHash) {
+            $claim->setTxHash($txHash);
+        }
+        if (in_array($newStatus, ['completed', 'failed'])) {
+            $claim->setProcessedAt(new \DateTime());
+        }
+
+        $this->em->flush();
+
+        return $this->json([
+            'id' => $claim->getId(),
+            'status' => $claim->getStatus(),
+            'tx_hash' => $claim->getTxHash(),
+            'processed_at' => $claim->getProcessedAt()?->format('c'),
+        ]);
+    }
+
+    /**
+     * Batch update status for multiple claims.
+     */
+    #[Route('/admin/claims/batch-status', methods: ['PATCH'])]
+    public function adminBatchStatus(Request $request): JsonResponse
+    {
+        if ($err = $this->checkAdmin($request)) return $err;
+
+        $data = json_decode($request->getContent(), true);
+        $ids = $data['ids'] ?? [];
+        $newStatus = $data['status'] ?? null;
+        $txHash = $data['tx_hash'] ?? null;
+
+        $valid = ['pending', 'processing', 'completed', 'failed'];
+        if (!$newStatus || !in_array($newStatus, $valid)) {
+            return $this->json(['error' => 'Invalid status'], Response::HTTP_BAD_REQUEST);
+        }
+        if (empty($ids) || !is_array($ids)) {
+            return $this->json(['error' => 'ids must be a non-empty array'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $updated = 0;
+        foreach ($ids as $id) {
+            $claim = $this->nftClaimRepo->find($id);
+            if (!$claim) continue;
+            $claim->setStatus($newStatus);
+            if ($txHash) $claim->setTxHash($txHash);
+            if (in_array($newStatus, ['completed', 'failed'])) $claim->setProcessedAt(new \DateTime());
+            $updated++;
+        }
+        $this->em->flush();
+
+        return $this->json(['updated' => $updated]);
+    }
+
+    /**
+     * Export claims as CSV.
+     */
+    #[Route('/admin/claims/export', methods: ['GET'])]
+    public function adminExportClaims(Request $request): Response
+    {
+        if ($err = $this->checkAdmin($request)) return $err;
+
+        $status = $request->query->get('status');
+        $qb = $this->nftClaimRepo->createQueryBuilder('c')->orderBy('c.createdAt', 'ASC');
+        if ($status) {
+            $qb->andWhere('c.status = :status')->setParameter('status', $status);
+        }
+        $claims = $qb->getQuery()->getResult();
+
+        $csv = "id,ki_address,eth_address,total_allocation,nft_count,status,created_at,tx_hash\n";
+        foreach ($claims as $c) {
+            $csv .= implode(',', [
+                $c->getId(),
+                $c->getKiAddress(),
+                $c->getEthAddress(),
+                $c->getTotalAllocation(),
+                $c->getNftCount(),
+                $c->getStatus(),
+                $c->getCreatedAt()->format('c'),
+                $c->getTxHash() ?? '',
+            ]) . "\n";
+        }
+
+        return new Response($csv, 200, [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="nft-claims-export.csv"',
+        ]);
+    }
+
+    /**
+     * Admin dashboard stats.
+     */
+    #[Route('/admin/stats', methods: ['GET'])]
+    public function adminStats(Request $request): JsonResponse
+    {
+        if ($err = $this->checkAdmin($request)) return $err;
+
+        $stats = $this->nftClaimRepo->getClaimsStats();
+        $totalNfts = $this->nftAssetRepo->countTotal();
+        $totalWallets = $this->nftAssetRepo->countUniqueOwners();
+        $totalClaims = $this->nftClaimRepo->countClaims();
+
+        $byStatus = [];
+        $totalAllocClaimed = 0;
+        foreach ($stats as $s) {
+            $byStatus[$s['status']] = ['count' => (int) $s['count'], 'allocation' => (float) $s['total_allocation']];
+            $totalAllocClaimed += (float) $s['total_allocation'];
+        }
+
+        return $this->json([
+            'total_nfts' => $totalNfts,
+            'total_wallets' => $totalWallets,
+            'total_claims' => $totalClaims,
+            'claims_percentage' => $totalWallets > 0 ? round($totalClaims / $totalWallets * 100, 2) : 0,
+            'total_allocation_claimed' => $totalAllocClaimed,
+            'pool_total' => 5000000,
+            'by_status' => $byStatus,
+        ]);
+    }
+
     /**
      * Admin endpoint to trigger CSV import.
      * Protected by ADMIN_API_KEY header.
