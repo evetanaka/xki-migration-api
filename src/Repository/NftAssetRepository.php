@@ -72,4 +72,37 @@ class NftAssetRepository extends ServiceEntityRepository
             ->getQuery()
             ->getSingleScalarResult();
     }
+
+    /**
+     * @return array<string, int> e.g. ['Common' => 30802, 'Uncommon' => 1015, ...]
+     */
+    public function getScarcityCounts(): array
+    {
+        $rows = $this->createQueryBuilder('n')
+            ->select('n.scarcity, COUNT(n.id) as cnt')
+            ->groupBy('n.scarcity')
+            ->getQuery()
+            ->getResult();
+
+        $counts = [];
+        foreach ($rows as $r) {
+            $counts[$r['scarcity']] = (int) $r['cnt'];
+        }
+        return $counts;
+    }
+
+    /**
+     * Batch update allocation for all NFTs of a given scarcity.
+     */
+    public function updateAllocationByScarcity(string $scarcity, string $allocation): int
+    {
+        return (int) $this->createQueryBuilder('n')
+            ->update()
+            ->set('n.allocation', ':alloc')
+            ->where('n.scarcity = :scarcity')
+            ->setParameter('alloc', $allocation)
+            ->setParameter('scarcity', $scarcity)
+            ->getQuery()
+            ->execute();
+    }
 }

@@ -555,8 +555,108 @@ class NftController extends AbstractController
             'total_claims' => $totalClaims,
             'claims_percentage' => $totalWallets > 0 ? round($totalClaims / $totalWallets * 100, 2) : 0,
             'total_allocation_claimed' => $totalAllocClaimed,
-            'pool_total' => 5000000,
+            'pool_total' => (float) ($this->em->getRepository(NftClaimConfig::class)->find('pool_total')?->getValue() ?? 5000000),
             'by_status' => $byStatus,
+            'scarcity_counts' => $this->nftAssetRepo->getScarcityCounts(),
+        ]);
+    }
+
+    /**
+     * Adjust pool total and recalculate all allocations.
+     */
+    #[Route('/admin/pool', methods: ['PATCH'])]
+    public function adminUpdatePool(Request $request): JsonResponse
+    {
+        if ($err = $this->checkAdmin($request)) return $err;
+
+        $data = json_decode($request->getContent(), true);
+        $poolTotal = (float) ($data['pool_total'] ?? 0);
+        $recalculateClaims = $data['recalculate_claims'] ?? true;
+
+        if ($poolTotal <= 0) {
+            return $this->json(['error' => 'pool_total must be > 0'], Response::HTTP_BAD_REQUEST);
+        }
+
+        // Update config
+        $configEntity = $this->em->getRepository(NftClaimConfig::class)->find('pool_total');
+        if ($configEntity) {
+            $configEntity->setValue((string) $poolTotal);
+        } else {
+            $configEntity = new NftClaimConfig();
+            $configEntity->setKey('pool_total');
+            $configEntity->setValue((string) $poolTotal);
+            $this->em->persist($configEntity);
+        }
+        $this->em->flush();
+
+        // Recalculate allocations
+        $scarcityCounts = $this->nftAssetRepo->getScarcityCounts();
+        $allocations = $this->allocationService->calculateAllocations($scarcityCounts, $poolTotal);
+
+        // Batch update all NFT assets
+        $nftsUpdated = 0;
+        foreach ($allocations as $scarcity => $alloc) {
+            $nftsUpdated += $this->nftAssetRepo->updateAllocationByScarcity($scarcity, (string) $alloc);
+        }
+
+        // Recalculate existing claims
+        $claimsUpdated = 0;
+        if ($recalculateClaims) {
+            $claims = $this->nftClaimRepo->findAll();
+            foreach ($claims as $claim) {
+                $newTotal = $this->nftAssetRepo->getTotalAllocationByOwner($claim->getKiAddress());
+                $claim->setTotalAllocation($newTotal);
+                $claimsUpdated++;
+            }
+            $this->em->flush();
+        }
+
+        return $this->json([
+            'pool_total' => $poolTotal,
+            'allocations' => $allocations,
+            'scarcity_counts' => $scarcityCounts,
+            'nfts_updated' => $nftsUpdated,
+            'claims_updated' => $claimsUpdated,
+        ]);
+    }
+
+    /**
+     * Preview pool change without applying (dry run).
+     */
+    #[Route('/admin/pool/preview', methods: ['POST'])]
+    public function adminPreviewPool(Request $request): JsonResponse
+    {
+        if ($err = $this->checkAdmin($request)) return $err;
+
+        $data = json_decode($request->getContent(), true);
+        $poolTotal = (float) ($data['pool_total'] ?? 0);
+
+        if ($poolTotal <= 0) {
+            return $this->json(['error' => 'pool_total must be > 0'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $scarcityCounts = $this->nftAssetRepo->getScarcityCounts();
+        $allocations = $this->allocationService->calculateAllocations($scarcityCounts, $poolTotal);
+
+        // Calculate subtotals
+        $breakdown = [];
+        $total = 0;
+        foreach ($allocations as $scarcity => $perNft) {
+            $count = $scarcityCounts[$scarcity] ?? 0;
+            $subtotal = $perNft * $count;
+            $breakdown[$scarcity] = [
+                'count' => $count,
+                'per_nft' => round($perNft, 6),
+                'subtotal' => round($subtotal, 2),
+            ];
+            $total += $subtotal;
+        }
+
+        return $this->json([
+            'pool_total' => $poolTotal,
+            'breakdown' => $breakdown,
+            'total_distributed' => round($total, 2),
+            'existing_claims' => $this->nftClaimRepo->countClaims(),
         ]);
     }
 
