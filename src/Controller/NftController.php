@@ -386,7 +386,15 @@ class NftController extends AbstractController
                ->setParameter('search', "%$search%");
         }
 
-        $total = (clone $qb)->select('COUNT(c.id)')->getQuery()->getSingleScalarResult();
+        $countQb = $this->nftClaimRepo->createQueryBuilder('c')->select('COUNT(c.id)');
+        if ($status) {
+            $countQb->andWhere('c.status = :status')->setParameter('status', $status);
+        }
+        if ($search) {
+            $countQb->andWhere('c.kiAddress LIKE :search OR c.ethAddress LIKE :search')
+                    ->setParameter('search', "%$search%");
+        }
+        $total = $countQb->getQuery()->getSingleScalarResult();
 
         $claims = $qb->setFirstResult($offset)->setMaxResults($limit)->getQuery()->getResult();
 
