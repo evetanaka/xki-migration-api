@@ -290,7 +290,7 @@ class AdminController extends AbstractController
     /**
      * Update claim status
      */
-    #[Route('/claims/{id}', name: 'api_admin_claims_update', methods: ['PATCH'])]
+    #[Route('/claims/{id}', name: 'api_admin_claims_update', methods: ['PATCH'], requirements: ['id' => '\d+'])]
     public function updateClaim(Request $request, int $id): JsonResponse
     {
         if (!$this->verifyToken($request)) {
@@ -378,7 +378,7 @@ class AdminController extends AbstractController
     /**
      * Delete a claim (allows user to re-claim with correct wallet)
      */
-    #[Route('/claims/{id}', name: 'api_admin_claims_delete', methods: ['DELETE'])]
+    #[Route('/claims/{id}', name: 'api_admin_claims_delete', methods: ['DELETE'], requirements: ['id' => '\d+'])]
     public function deleteClaim(Request $request, int $id): JsonResponse
     {
         if (!$this->verifyToken($request)) {
@@ -578,7 +578,7 @@ class AdminController extends AbstractController
      *   { "ids": [1,2,3], "txHash": "0x..." }
      *   { "claims": [{"id":1,"txHash":"0x..."}] }
      */
-    #[Route('/claims/batch-complete', name: 'api_admin_claims_batch_complete', methods: ['POST'])]
+    #[Route('/claims/batch-complete', name: 'api_admin_claims_batch_complete', methods: ['POST'], priority: 10)]
     public function batchComplete(Request $request): JsonResponse
     {
         if (!$this->verifyToken($request)) {
@@ -647,7 +647,7 @@ class AdminController extends AbstractController
      * Set TX hash for claims matching given ETH addresses.
      * Body: { "txHash": "0x...", "ethAddresses": ["0x...", ...] }
      */
-    #[Route('/claims/batch-txhash', name: 'api_admin_claims_batch_txhash', methods: ['POST'])]
+    #[Route('/claims/batch-txhash', name: 'api_admin_claims_batch_txhash', methods: ['POST'], priority: 10)]
     public function batchTxHash(Request $request): JsonResponse
     {
         if (!$this->verifyToken($request)) {
