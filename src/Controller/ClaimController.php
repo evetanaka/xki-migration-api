@@ -19,9 +19,21 @@ class ClaimController extends AbstractController
     ) {
     }
 
+    private function isClaimsPaused(): bool
+    {
+        return filter_var($_ENV['CLAIMS_PAUSED'] ?? 'false', FILTER_VALIDATE_BOOLEAN);
+    }
+
     #[Route('/prepare', name: 'api_claim_prepare', methods: ['POST'])]
     public function prepare(Request $request): JsonResponse
     {
+        if ($this->isClaimsPaused()) {
+            return $this->json([
+                'error' => 'Claims are temporarily paused. Distribution is in progress.',
+                'paused' => true,
+            ], 423);
+        }
+
         $data = json_decode($request->getContent(), true);
 
         if (!isset($data['kiAddress']) || !isset($data['ethAddress'])) {
@@ -61,6 +73,13 @@ class ClaimController extends AbstractController
     #[Route('/submit', name: 'api_claim_submit', methods: ['POST'])]
     public function submit(Request $request): JsonResponse
     {
+        if ($this->isClaimsPaused()) {
+            return $this->json([
+                'error' => 'Claims are temporarily paused. Distribution is in progress.',
+                'paused' => true,
+            ], 423);
+        }
+
         $data = json_decode($request->getContent(), true);
 
         $requiredFields = ['kiAddress', 'ethAddress', 'signature', 'pubKey', 'nonce'];

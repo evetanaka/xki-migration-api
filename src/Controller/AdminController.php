@@ -290,7 +290,7 @@ class AdminController extends AbstractController
     /**
      * Update claim status
      */
-    #[Route('/claims/{id}', name: 'api_admin_claims_update', methods: ['PATCH'])]
+    #[Route('/claims/{id}', name: 'api_admin_claims_update', methods: ['PATCH'], requirements: ['id' => '\d+'])]
     public function updateClaim(Request $request, int $id): JsonResponse
     {
         if (!$this->verifyToken($request)) {
@@ -378,7 +378,7 @@ class AdminController extends AbstractController
     /**
      * Delete a claim (allows user to re-claim with correct wallet)
      */
-    #[Route('/claims/{id}', name: 'api_admin_claims_delete', methods: ['DELETE'])]
+    #[Route('/claims/{id}', name: 'api_admin_claims_delete', methods: ['DELETE'], requirements: ['id' => '\d+'])]
     public function deleteClaim(Request $request, int $id): JsonResponse
     {
         if (!$this->verifyToken($request)) {
@@ -569,6 +569,116 @@ class AdminController extends AbstractController
                 'error' => 'Validation failed: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Batch complete claims: move approved → completed with optional txHash.
+     * Body options:
+     *   { "fromStatus": "approved", "txHash": "0x..." }
+     *   { "ids": [1,2,3], "txHash": "0x..." }
+     *   { "claims": [{"id":1,"txHash":"0x..."}] }
+     */
+    #[Route('/claims/batch-complete', name: 'api_admin_claims_batch_complete', methods: ['POST'], priority: 10)]
+    public function batchComplete(Request $request): JsonResponse
+    {
+        if (!$this->verifyToken($request)) {
+            return $this->json(['error' => 'Unauthorized'], 401);
+        }
+
+        $data = json_decode($request->getContent(), true);
+        $globalTxHash = $data['txHash'] ?? null;
+        $claims = [];
+
+        if (!empty($data['fromStatus'])) {
+            $claims = $this->claimRepository->findByStatus($data['fromStatus']);
+        } elseif (!empty($data['ids'])) {
+            foreach ($data['ids'] as $id) {
+                $c = $this->claimRepository->find($id);
+                if ($c) $claims[] = $c;
+            }
+        } elseif (!empty($data['claims'])) {
+            // Per-claim txHash
+            $completed = 0;
+            $results = [];
+            foreach ($data['claims'] as $entry) {
+                $c = $this->claimRepository->find($entry['id'] ?? 0);
+                if (!$c) { $results[] = ['id' => $entry['id'], 'status' => 'not_found']; continue; }
+                if ($c->getStatus() === 'completed') { $results[] = ['id' => $c->getId(), 'status' => 'skipped']; continue; }
+                $c->setStatus('completed');
+                $c->setClaimedAt(new \DateTime());
+                if (!empty($entry['txHash'])) $c->setTxHash($entry['txHash']);
+                $c->setAdminNotes(trim(($c->getAdminNotes() ?? '') . "\n[Batch] Completed — " . date('Y-m-d H:i:s')));
+                $this->claimRepository->save($c, false);
+                $completed++;
+                $results[] = ['id' => $c->getId(), 'status' => 'completed', 'txHash' => $entry['txHash'] ?? null];
+            }
+            $this->claimRepository->getEntityManager()->flush();
+            return $this->json(['success' => true, 'completed' => $completed, 'results' => $results]);
+        } else {
+            return $this->json(['error' => 'Provide fromStatus, ids, or claims array'], 400);
+        }
+
+        $completed = 0;
+        $skipped = 0;
+        $results = [];
+
+        foreach ($claims as $c) {
+            if ($c->getStatus() === 'completed') { $skipped++; $results[] = ['id' => $c->getId(), 'status' => 'skipped']; continue; }
+            $c->setStatus('completed');
+            $c->setClaimedAt(new \DateTime());
+            if ($globalTxHash) $c->setTxHash($globalTxHash);
+            $c->setAdminNotes(trim(($c->getAdminNotes() ?? '') . "\n[Batch] Completed — " . date('Y-m-d H:i:s')));
+            $this->claimRepository->save($c, false);
+            $completed++;
+            $results[] = ['id' => $c->getId(), 'status' => 'completed'];
+        }
+
+        $this->claimRepository->getEntityManager()->flush();
+
+        return $this->json([
+            'success' => true,
+            'completed' => $completed,
+            'skipped' => $skipped,
+            'results' => $results,
+        ]);
+    }
+
+    /**
+     * Set TX hash for claims matching given ETH addresses.
+     * Body: { "txHash": "0x...", "ethAddresses": ["0x...", ...] }
+     */
+    #[Route('/claims/batch-txhash', name: 'api_admin_claims_batch_txhash', methods: ['POST'], priority: 10)]
+    public function batchTxHash(Request $request): JsonResponse
+    {
+        if (!$this->verifyToken($request)) {
+            return $this->json(['error' => 'Unauthorized'], 401);
+        }
+
+        $data = json_decode($request->getContent(), true);
+        $txHash = $data['txHash'] ?? null;
+        $ethAddresses = $data['ethAddresses'] ?? [];
+
+        if (!$txHash || empty($ethAddresses)) {
+            return $this->json(['error' => 'txHash and ethAddresses are required'], 400);
+        }
+
+        $updated = 0;
+        foreach ($ethAddresses as $eth) {
+            $claims = $this->claimRepository->findBy(['ethAddress' => $eth]);
+            foreach ($claims as $c) {
+                $c->setTxHash($txHash);
+                $this->claimRepository->save($c, false);
+                $updated++;
+            }
+        }
+
+        $this->claimRepository->getEntityManager()->flush();
+
+        return $this->json([
+            'success' => true,
+            'updated' => $updated,
+            'txHash' => $txHash,
+        ]);
     }
 
     /**
